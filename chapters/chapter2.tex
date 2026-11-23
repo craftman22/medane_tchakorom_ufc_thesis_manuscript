@@ -1,0 +1,156 @@
+\chapter{Parallel architectures}
+
+
+
+\section{Introduction}
+
+Parallel architectures refer to computer system designs that enable simultaneous execution of multiple instructions, exploiting
+concurrency and parallelism, unlike first generation of computer architectures.  Back to early development of computer architectures, single-core machine were the norm. They were just able of doing sequential execution, gradually facing performance-wall and power-wall. A paradigm shift occurs in 2005, where multi-core machine became mainstream…..
+
+In section 1, we are going to explore the different taxonomies for parallel architectures highlighting from the perspective of an HPC performance engineer the strengths , limitations and necessary trade-off when it comes to exploit hardware parallelism through programming. Section 2 will be devoted to programming models that gradually arise from parallel architecture development, how they ease development, what are their limitations and potential thread off based on the final development goal.
+
+
+(different perspectives sum up to show feasibility, performance expectations and algorithm-hardware best match)
+
+\section{Parallel architectures taxonomies and design}
+
+\subsection{Flynn's taxonomy}
+
+Flynn's taxonomy classifies parallel architectures based on how instructions and data streams are handled: SSID, SIMD, MISD, MIMD. 
+
+\begin{description}
+
+\item[SSID (Single Instruction, Single Data)] This class of parallel architectures execute a single instruction stream on one data item at a time. This is exemplified by single processor machine running serial programs. Though this type of architecture only display instruction-level parallelism (ILP) - not consider as real parallelism - (pipeling, superscalar, caches) and can't support HPC type workload, it can show usefulness when it comes to prototyping and validation of algorithm at small scale data. On such architectures, the programming model is simple, easy to debug and the workload is portable. Therefore it can serve as baseline performance reference for performance scaling. Modern single-core machines though tend to integrate SIMD architecture more often.
+
+\item[SIMD (Single Instruction, Multiple Data)] This class of parallel architecture enable running one instruction stream across multiple data simultaneously, unlocking data-level parallelism. This class includes vector units, GPU, Tensor cores. In terms of pure performance, one can reach extremely high FLOP/s and memory throughput when data-parallelism is available. Well known libraries (CUDA, OpenMP SIMD) help leverage this hardware paradigm by exposing gains transparently, mostly when it comes to structured linear algebra and stencil-based PDE solvers. 
+However, performance can collapses with irregular sparsity patterns or divergent control flow, while manual vectorization is often required and debugging and portability expose some difficulties. In summary, this architecture most gains strongly depend on workload structure awareness and mathematical model designed to fit it's strength rather than vice-versa. 
+
+
+
+\item[MISD (Multiple Instruction, Single Data)] With this class, multiple instructions streams are applied simultaneously to the same data stream. This make the base of redundant execution systems and fault-tolerant pipelines. Here parallelism is not really use for speed, factors are mainly reliability, deterministic timing and error detection. Consequently, this type of architecture is rarely considered for performance benefits in HPC, but mostly for safety-critical parallel computing in order to enhance fault detection and resilience, ensuring data integrity in software. Furthermore, the lack of general frameworks and ecosystems induce minimal impact on mainstream software.
+
+
+
+
+(dire dans ce paragraphe que l'on parlera des programming models à la section...)
+
+\item[MIMD (Multiple Instruction, Multiple Data)] This class refer to hardware design enabling independent instruction and data streams across processing units. This is the foundation of multicore, clusters and distributed memory computers. This hardware paradigm offer the best scalability as compare to precedent classes, while supporting asynchronous progress and tunable communication/computation overlap. Furthermore, the workload and dataset can be very large enabling large problem solving. Aside, performance are limited by collective operations, network congestions and NUMA penalties, while race conditions, deadlocks and distributed bugs make application development more complex. Developement success depends on wisely choosing the adequate parallel programming model (MPI, Threads, Taskin). Convergence behavior of iterative methods start interacting with communication delays and consistency, requiring that theory incorporate architecture-induced asynchrony and heterogeneity. 
+
+
+\end{description}
+
+\hl{peut etre une phrase de transition ici}
+
+
+
+\subsection{Johnson's taxonomy}
+
+Johson's taxonomy classifies parallel architectures by memory organization/communication model.
+
+\begin{description}
+\item[Uniform Memory Access (UMA)/ Shared-Memory Machines] This class exposes a single shared memory with uniform access latency from any processor. Examples include single-socket multicore servers and high-end SMPs. From the performancere perspective, this class of machines exhibit fast communication and low latency, facilitating synchronization (good for fine grained parallelism). However, scalability is limited due to coherence traffic and shared interconnect contention. Performance tuning mostly focuses on cache locality and minimizing coherence misses. Building applications for those type of architectures is made easy via threads and shared data structures. Nevertheless, as the number of threads grows, performance degrade, making these type of architecture best suited for medium-scale parallel iterative solvers. From a mathematical point of view, UMA type archicture ensure strongly consistent view of vector/matrix data leading to reliable synchronous convergence, while asynchrony yields little gain because memory consistency barriers dominate. 
+
+
+\item[Non-Uniform Memory Access (NUMA)/ Distributed Shared-Memory Machines] 
+NUMA architectures divide memory into local nodes with fast access locally and slower remote access. Memory remains logically shared, but physical distance matters. Example of such architectures include multi-socket servers, cache-coherent NUMA supercomputers. NUMA architectures takes advantage of memory locality, sustaining more cores than UMA architectures, so are more scalable. Nevertheless, if no care is taken in NUMA-aware optimisations (pinning, data placement, partition-aware solvers), the cross-socket traffic can kill bandwidth. For developpers, they can still take advantage of the shared-memory abstraction available on UMA architectures, but performances become harder to reason about, hybrid models (OpenMP + affinity hints, task locality) become essential. Last but not least, NUMA architectures spatially maps with domain decomposition algorithms, even if remote update may stall. This behavior strongly motivates the existence of asynchronous iterative methods, in order to avoid waiting remote updates.
+
+
+\item[Distributed-Memory MIMD (Message-Passing Clusters)] 
+This class imposes private memory for each processor, while communication becomes available only through explicit communication (MPI, UCX, GasNet). This archicture is dominant in HPC clusters and exascale systems. This type of architecture is extremely scalable with isolated memory bandwith per node. Nevertheless, communication latency and bandwith can become bottlenecks especially with collectives operations and reductions. Performance therefore relies on communication-avoid algorithms and overallapping compute/communication. From the developper point of view, clear data ownership per node encourages modular design and independent progress, while MPI introduces complexity with deadlocks, progress model issues and buffering strategies. Testing correctness of async/overlapping communication becomes challenging. This architecture is ideal for asynchronous domain decomposition algorithms as update can propagate gradually but the distributed memory requires robust convergence detection. 
+
+
+\item[Hybrid Architectures (Cluster + Multicore + GPU Accelators)] blablabla-car
+
+
+\end{description}
+
+
+
+\subsection{Computing units distance based taxonomy}
+
+According to the radius of the system (distance between compute units), another classification can be deduced which better reflects the trend.
+
+peut etre plus utile pour decrire la trend ?
+
+Ici l'on peut dire que les deux premiers (MM et Parallel Machines) representent deja des cas etudiés, se réferrer aux sections précedentes.
+
+\begin{description}
+\item[Monoprocessor machines] This class corresponds to 
+
+
+\item[Parallel machines] This class corresponds to the least distance between processing units, which are grouped inside a single machine, connected through low-lantency , high-bandwith connectors. 
+
+\item[Local clusters] This class corresponds to multiple group of machine in a small (small ?? maybe WAN level) geographical zone interconnected by a network.  
+
+
+\item[Distributed clusters / Grid]
+Distributed clusters span multiples sites and heteregeneous networks. Communication lantency is high, unpredictable and unrealiable. Execution is often message-driven or task-based rather than globally synchronized. 
+
+
+\end{description}
+
+
+\section{Programming models}
+
+\begin{description}
+\item [Shared Memory (Threads) model] Model where memory is shared across multiple tasks (threads or processes) and directly write/read the same memory locations. Synchronization primitive coordinate access and prevent race conditions when tasks update shared data. Examplified by POSIX Threads (low-level) and OpenMP (high-level).
+
+\item [Distributed Memory (Message Passing) Model] This model assumes parallel tasks owns their private memory and tasks communicate by explicitely sending and receiving messages over a network. The de-facto standard implementation is the Message Passing Interface (MPI).  
+
+\item [Data Parallel Model] This model incur that data is distributed across parallel tasks and performing the same operation on different part of the data simultaneously. Example: High Performance Fortran , MapReduce
+
+\item [Hybrid Model (MPI + X)]
+
+\item[Task Parallel model + PGAS model + Actor model ] 
+
+\end{description}
+
+
+% \subsection{Progress models}
+
+% Progress model are description of how and when communication and synchronization should progress forward inside a programming model. 
+
+% Questions:
+% \begin{description}
+% \item Does cpu need to call library routines to move messages
+% \item Can data transfer proceed when application is running?
+% \item Who ensure communication progress (harware vs runtime vs user)
+% \end{description}
+
+% In distributed memory context, progress model has impact on:
+% \begin{description}
+% \item Scalability
+% \item Overlap of communication and computation
+% \item Latency hiding
+% \item \textbf{Asynchronous algorithm reliability}
+% \end{description}
+
+% Comparing progress models across programming models
+
+% Dataflow-aware Krylov/asynchronous solvers
+
+% MPI strategies for asynchrony like progression
+
+%  Frequent polling
+% Periodic MPI_Test / MPI_Iprobe inside computational loops to avoid progress stalls.
+
+%  Asynchronous progress threads
+% Enable MPI background threads (MPI_THREAD_MULTIPLE, OMPI_MCA_*, Intel MPI progress threads) so communication progresses even when user code doesn’t call MPI.
+
+% One-sided communication (RMA)
+% Use MPI_Put/Get with RDMA-capable networks → hardware can advance transfers autonomously.
+
+% Overlap-enabling communication design
+% Split computation into smaller chunks so MPI calls are interleaved with work.
+
+% Progress-friendly algorithm restructuring
+% Task decomposition and looser synchronization — reduce global barriers & large blocking regions.
+
+\section{Future directions}
+
+
+\section{Conclusion}
+
+
+
+% pages 5 - 14

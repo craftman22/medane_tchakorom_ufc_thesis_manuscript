@@ -1,0 +1,29 @@
+\makeatletter
+\newcommand{\tocfill}{\cleaders\hbox{$\m@th \mkern\@dotsep mu . \mkern\@dotsep mu$}\hfill}
+\makeatother
+\newcommand{\abbrlabel}[1]{\makebox[3cm][l]{\textbf{#1}\ \tocfill}}
+\newenvironment{abbreviations}{\begin{list}{}{\renewcommand{\makelabel}{\abbrlabel}%
+\setlength{\itemsep}{0pt}}}{\end{list}}
+
+\chapter*{List of abbreviations}
+\markboth{List of abbreviations}{}
+
+
+\begin{abbreviations}
+\item[PU] Processing Unit
+\item[PDE] Partial Differential Equations
+\item[GMRES] Generalized Minimal Residual Method
+\item[CG] Conjugate Gradient
+\item[PIA] Parallel Iterative Algorithm
+\item[SISC] Synchronous Iteration Synchronous Communication
+\item[SIAC] Synchronous Iteration Asynchronous Communication
+\item[AIAC] Asynchronous Iteration Asynchronous Communication
+\item[SPD] Symmetric Positive Definite
+\item[ILU] Incomplete LU
+\item[ILUT] Incomplete LU with Thresholding
+\item[IC] Incomplete Cholesky
+\item[DD] Domain Decomposition
+\item[d.o.f] Degree Of Freedom
+\item[SMP] Symmetric Multi-Processing
+\end{abbreviations}
+

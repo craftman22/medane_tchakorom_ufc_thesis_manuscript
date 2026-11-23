@@ -1,0 +1,539 @@
+\chapter{Linear Numerical methods (temporary title)}
+
+% [ Il faudrait mettre l'accent sur la possibilité de paralléliser ou de rendre asynchrones certaines méthodes]
+
+\section{Introduction}
+
+\hl{A reecrire imperativement}
+
+So far this paper has focused on describing different parallels architectures and their closely related programming environments. This upstream work proved effectiveness of parallel computing in increasing computing power and consequently increasing problem solving speed-up. Therefore, this chapter will focus on use use case of parallel computing in one specific domain: Numerical methods.
+
+Numerical methods are algorithmic techniques that are used to solve mathematical problems that are difficult or impossible to solve analytically. They are involved in natural phenomenon simulation like weather simulation or heat propagation, thus are fundamental in a broad range of field from engineering to physics to cite few. Numerical methods are divided into two key methods: Direct methods and Iterative methods. Both aim at finding solution to mathematical problem, but through different techniques and with slightly different results. To illustrate those methods and by the way stay in the scope of this document, we are going to present those two methods in the context of solving linear systems of equations that take the form:
+
+\begin{equation}
+Ax = b,
+\label{eq:linearequation}
+\end{equation} 
+
+where $A \in \mathbb{R}^{n \times n}$ is a non-singular matrix (i.e. $\det(A) \neq 0$ ), and $x$, $b \in \mathbb{R}^{n}$ two vectors.
+
+In the following lines, we introduce both methods applied to linear systems of equation resolution and pointing out how their success is closely related to taking advantage of parallel computing. We will give particular attention to iterative methods, as they particulary benefit for parallelism induce by parallel computing. Two types of iteratives algorithms highly suited to parallel computing will be presented. This chapter will end with preconditionning techniques for accelerating iterative methods.
+
+
+
+% for each methods:
+%  description - historique - examples - parler de leur parallelisation
+% definir ce que c'est qu'une equation linéaire
+
+\section{Direct methods}
+
+Direct methods for solving linear systems of equations illustrated by~\ref{eq:linearequation} are a class of algorithms that, under exact arithmetic, compute the exact solution of the system in a finite number of steps. This set of methods mainly rely on matrix factorization to provide equivalent systems to~(\ref{eq:linearequation}), that are more amenable to solution. Earlier direct method such as LU Decomposition transforms the original system through matrix factorization $A = LU $, where $L$ is a lower triangular matrix (with ones on the diagonal) and $U$ and upper triangular matrix. Once simplified, the linear system of equation can be solve through two or more substitutions operations. A general framework of direct method can be presented as follows:
+
+Given a linear system of equation $Ax = b$, where $A \in \mathbb{R}^{n \times n}$ is a non-singular matrix, and $x$, $b \in \mathbb{R}^{n}$ two vectors, direct methods proceed in two steps:
+
+\begin{description}
+\item[Factorization or elimination (Step 1)] Transform the original coefficient matrix $A \in \mathbb{R}^{n \times n}$ into simpler matrix factors in order to make to system easier to solve. Practically speaking, the principle is based on exploiting the structure of $A$ to decompose it into a product of matrices, often triangular matrices. Common decompositions lead to methods listed below:
+\begin{description}
+\item[Gaussian Elimination] It reduces the original system through forward elimination, $U = GA$ and $c = Gb$ where $G \in \mathbb{R}^{n \times n}$ is the Gauss transformation matrix, $U \in \mathbb{R}^{n \times n}$ the resulting upper triangular matrix and $c \in \mathbb{R}^{n}$ the new right hand side. In summary,  $Ax = b$ is equivalent to solving $Ux = c$. 
+\item[LU Decomposition] $A = LU$ where $L$ is a lower triangular matrix with unit diagonal entries and $U$ and upper triangular matrix.
+\item[Cholesky Decomposition] If $A$ is a symmetric positive definite matrix, then $A = LL^{T}$, where $L$ is a lower triangular matrix and $L^{T}$ the transpose of $L$. 
+\item[QR Decomposition] $A = QR$ where $Q$ is orthogonal (i.e. $Q^{T}Q = I$) and $R$ is upper triangular.
+\item[SVD (Singular Value Decomposition)] $A = U \Sigma V^{T}$ where $U,V \in \mathbb{R}^{n \times n}$ are orthogonal, and $\Sigma \in \mathbb{R}^{n \times n}$ is a full-rank diagonal matrix.
+\end{description}
+
+\item[Substitution (Step 2)] After \textit{(step 1)}, the goal here is to solve efficiently the system obtain earlier. This implies solving sequentially two (or more) simplier triangular system using forward and backward substitution. Let's illustrate this with LU Decomposition:
+
+\begin{description}
+\item \textit{Step 1} gives us: $A = LU\: \Rightarrow \:LUx = b$
+\item \textit{Step 2} consists in solving $Ly = b$ using \textit{forward substitution}, then solve $Ux = y$ using \textit{backward substitution}.
+\end{description}
+\end{description}
+
+
+
+In exact arithmetic, the effectiveness of direct methods on Equation (\ref{eq:linearequation}) is guaranteed. Nevertheless, numerical computing may introduces round-off errors or invalid operations (e.g. division by really small value) due to floating-point operations. To tackle numerical stability issues the general framework presented earlier sometimes involves another step: \textbf{Pivoting}. Pivoting refers to re-ordering rows and/or columns during the elimination process in order to ensure valid operations and numerical stability. This latter process is standard in most Gaussian Elimination and LU Decomposition implementations unless $A$ is a SPD matrix, which means the algorithm is backward stable without any pivoting.
+
+
+From a practical point of view, when dense matrices are addressed, the first step (factorization) is often resource-intensive. Consequently, direct methods efficiency heavily depends on matrix size $n \times n$. Nevertheless, once the factorization step is completed, the second step (substitution) is cheaper. Literature count numerous studies [] on computational and memory complexities of common direct methods with dense matrices. A brief summary of these results are presented in table~\tabref{commonDirectMethods}. As we can see, most direct methods exhibit $\mathcal{O}(n^3)$ and $\mathcal{O}(n^2)$ respectively for computational and memory complexity. These values imply that direct methods for dense matrix at least, are more suited for small to medium size problems or ill-conditioned systems. The cost of solving large-scale problems, counting millions of unknowns is too high. Furthermore more, direct methods are limited in terms of parallelization, and does not scale beyond few nodes (we will broadly discuss parallelization techniques for linear numerical methods latter in this chapter). \hl{aborder le cas des matrices creuses et du fill-in}.
+
+
+\begin{mtable}[ht]{.9\linewidth}{4}{|l|l|X|X|}{Common direct methods computional and memory complexities for $n\times n$ dense matrices}{commonDirectMethods}
+	\tabularheader{Method}{Matrix requirements}{Computational complexity}{Memory complexity}
+	Gaussian Elimination & $A$ non-singular & $\mathcal{O}(n^3)$ & $\mathcal{O}(n^2)$ \\
+	\hline
+	LU Decomposition & $A$ non-singular & $\mathcal{O}(n^3)$ & $\mathcal{O}(n^2)$ \\
+	\hline
+	Cholesky Decomposition & $A$ symmetric, positive definite & \hl{$\frac{1}{3} \times n^3$} & $\mathcal{O}(n^2)$ \\
+	\hline
+	QR Decomposition & $A$ full rank & $\mathcal{O}(n^3)$ & $\mathcal{O}(n^2)$ \\
+	\hline
+	SVD & $A$ any & $\mathcal{O}(n^3)$ & $\mathcal{O}(n^2)$ \\
+\end{mtable}
+
+
+
+
+% \hl{Storage and Sparse Considerations:}
+% \hl{accuracy and reliability}
+% \hl{storage and sparsity}
+% \hl{efficiency and scalability}
+% \hl{convergence rate}
+% memory intensiveness 
+% case of sparse matrix
+% utilisation des méthodes directes, avantages et inconvenients (cas specifique des matrices creuses aussi)
+
+
+
+\section{Iterative methods}
+
+Given the linear system of equations illustrated by Equation~\ref{eq:linearequation}, iterative methods are a set of algorithms that gives an approximation of the solution after a finite number of iterations. The mechanism is simple: Algorithm starts with a random initial guess $x^{(O)}$, then an operator is applied to this guess in order to find the next iterate, consequently this create after a certain number of iterations, a sequence of iterates $\{x^{(k)}\}_{k \geq 0}$. This iterative scheme can be written as :
+
+\begin{equation}
+    x^{(k + 1)} = F{(x^{(k)})}, k \geq 0
+    \label{eq:iterations}
+\end{equation}
+
+Where $F$ is the operator and the equation represent a fixed-point iteration scheme. 
+
+After a finite number of iterations, the method is expected (hopefully) to approach the real solution $x^*$ of the problem i.e. the method have converged. This is expressed by Equation~\ref{eq:convergence}.
+
+\begin{equation}
+     x^{*}  =\lim_{k \to \infty} x^{(k)} = A^{-1}b \in \mathbb{R}^n
+    \label{eq:convergence}
+\end{equation}
+
+Practical convergence criterion relies on the residual $r^{(k)} = b - Ax^{(k)}$ or on successive iterate difference $x^{(k+1)} - x^{(k)}$, where $x^{(k)}$ is the iterate value at iteration $k$. In fact both values can be computer at each iteration, contrary to the error $e^{(k)} = x^{(k)} - x^*$, where $x^*$ is the real solution. Additionally one has to choose a small fixed value $\epsilon$ which will serve as the tolerance, inducing the precision expected from the method, and the type of norm $\|.\|$ to be used by the algorithm. All this set, common convergence criterion include:
+
+\begin{description}
+\item[Absolute residual based criterion] $\|r^{(k)}\| = \|b - A x^{(k)}\| < \varepsilon$
+\item[Absolute successive iterate difference base criterion] $\|x^{(k+1)} - x^{(k)}\| < \varepsilon$
+\item[Relative criterion based on previous one] $\frac{\|r^{(k)}\|}{\|b\|} < \varepsilon \quad \text{or} \quad \frac{\|x^{(k+1)} - x^{(k)}\|}{\|x^{(k+1)}\|} < \varepsilon$
+\end{description}
+
+Choice of relative or absolute convergence criterion depends on the problem scale (magnitude of data like $\|b\|$,
+or $\|Ax_0\|$). Choosing an absolute tolerance for large-scale problem could lead to unnecessary iterations, hence    unnecessary computation. Rule of thumb is to prefer relative tolerance criterion in order to make the criterion robust across different problem scales. 
+
+Theoretical convergence study of iterative methods relies on the characteristics of the linear systems of equations (e.g sparsity, symmetry, conditioning), hence emphasis should be placed to deep understanding of the linear systems for efficient algorithm - problem mapping and algorithm tuning. All that set, the advantages of iteratives methods are worth the effort: They offer better convergence speed when compared to direct methods and are less costly, additionally they are better candidates for parallelization and scalabilty accross multiple nodes.  Broadly speaking, there are three major classes of iteratives methods: stationnary, non-stationnary iteratives and multigrid methods.
+
+
+\subsection{Stationnary iterative methods}
+% les méthodes stationnnaires sont les plus veilles methodes iteratives
+% elles sont basées sur le fait que l'operateur soit une constante et represente une méthode de point fixe
+% exemples: jacobi, guauss seidel
+Stationnary methods are the earliest iteratives methods that have proven their efficiency on certain type of problem, mainly \hl{sparse linear systems}. Solving the linear systems of equation(~\ref{eq:linearequation}) by the mean of stationnary method is equivalent to finding the stationnary point (fixed point) of the fixed-point iteration(~\ref{eq:iterations}). For solving linear systems, it's generally makes sense to choose the operator (or mapping) $F$ to be affine. For doing so, a split of the coefficient matrix $A$ is choosen so that $A = M - N$, where $M$ is non-singular. Hence we can rewrite $Ax = b$ in the form
+
+\begin{equation}
+    Mx = Nx + b
+\end{equation}
+
+leading to the fixed point affine iteration
+
+\hl{possible erreur dans l'equation en bas}
+\begin{equation}
+    x^{(k+1)} = M^{-1}(N x^{(k)} + b) = x^{(k)} + M^{-1}(b - Ax^{(k)}) , k \geq 0
+    \label{eq:fixed_point_affine_iteration}
+\end{equation}
+
+If we define $R = M^{-1}N$ and $c=M^{-1}b$, then we can rewrite ~\ref{eq:fixed_point_affine_iteration} as :
+
+\begin{equation}
+    x^{(k+1)} = Rx^{(k)} + c , k \geq 0
+    \label{eq:fixed_point_affine_iteration_simple}
+\end{equation}
+
+Where $R$ is the iteration matrix, $c$ the driven term (or constant vector), $x_k$ the current approximation and $x_k+1$ the next approximation. We notice that $R$ and $c$ are constant, and are fixed during iterations. Hence the name of the method: stationnary iterative method.
+
+Convergence conditions for such methods has been studied so far in~\ref{}. The only necessary condition for ensuring convergence of these methods for any initial guess $x_0$ is: $\rho(R) < 1$ where $\rho(B)$ is the spectral radius of the iteration matrix and define as  $\max |\lambda|$ over eigenvalues $\lambda$ of $R$. Once this condition is met, the convergence rate is determined by the $\rho(R)$, the smaller this value is, the better the convergence rate is. Nevertheless, from a practical point of view, computing $\rho(R)$ can be time consuming as it's depend on the matrix type of $R$. Thus, another solution is to find a matrix norm for which $\|R\| < 1$, then the convergence is guaranteed by the Banach Fixed-point theorem~\ref{}. Furthermore, finding such matrix norm can be facilitate by the matrix properties, we will discuss specific convergence conditions for each method later on.
+
+The efficiency of the method is determined by the split of the coefficient matrix $A$. Let's remind that every choice of split determine a specific iteration matrix defined as  $R=M^{-1}N$, thus matrix $M$ should be easy to invert for high efficiency ( solving $My=c$ should be easier than solving $Ay=c$). The choice of $M$ leads to classic stationnary methods such as Jacobi method ($M$ = diagonal part of $A$), Gauss-Siedel method ($M$ = triangular part of $A$) and Successive Over-Relaxation ($M$ = diagonal part of $A$ scaled by a factor plus one triangular part of $A$). The rest of this sub-section will be devoted to the Jacobi iterative method as an example of stationnary iterative method.
+
+Jacobi iterative method is one the classic and well-know iterative method for solving linear system of equation. As previously discussed, the discriminating criteria among stationnary iterative methods relies on the choice of the split of the coefficient matrix. Given matrix $A = {(a_{ij})}_{1\leq i,j\leq n}$, we define the split below for Jacobi method:
+
+\begin{equation}
+    A = D + L + U
+    \label{eq:split_of_A}
+\end{equation}
+
+where $D=diag(a_{11},a_{22},\ldots,a_{nn})$ is the diagonal part and $L$,$U$ the off-diagonal parts of $A$. Then we choose $M = D$ and $N=-(L+U)$. Plugging this into (\ref{eq:fixed_point_affine_iteration}) gives us the Jacobi iteration:
+
+\begin{equation}
+    x^{(k+1)} = D^{-1}(-(L+U) x^{(k)} + b) = x^{(k)} + D^{-1}(b - (L+U)x^{(k)}) , k \geq 0
+    \label{eq:jacobi_fixed_point_iteration}
+\end{equation}
+
+Consequently, we derive from (\ref{eq:jacobi_fixed_point_iteration}) the component-wise formula below:
+
+\begin{equation}
+    x^{(k+1)}_i = \frac{1}{a_{ii}} \left( b_i - \sum_{\substack{j=1 \\ j \ne i}}^{n} a_{ij} x^{(k)}_j \right), \quad i = 1, 2, \ldots, n
+    \label{eq:jacobi_fixed_point_iteration_component_level}
+\end{equation}
+
+A close look at (\ref{eq:jacobi_fixed_point_iteration_component_level} exhibits data dependency between next iterate $x^{(k+1)}$ and current iterate $x^{(k)}$ components. This latter remark implies two things: $x^{(k+1)}$ can be computed entirely when $x^{(k)}$ is known, and each component of $x^{(k+1)}$ can be computed in parallel. This induce memory-efficiency in Jacobi method as only two vectors need to be store to ensure progress of iterations. Next lines will focus on theoretical convergence analysis of Jacobi methods.
+
+Based on preceding analysis and~\ref{eq:jacobi_fixed_point_iteration}, we derive Jacobi method iteration matrix $R_J$ and define it as $R_J=-D^{-1}(L+U)=D^{-1}A - I$, where $I \in \mathbb{R}^{n}$ is a unit vector. Thus convergence effectiveness is based upon the condition $\rho(R_J) < 1$. This latter condition holds true if $A$ is strictly diagonally dominant i.e. $|a_{ii}| > \sum_{\substack{j=1 \\ j \ne i}}^{n} |a_{ij}|$ for all $i=1,2,\ldots,n$, ensuring convergence. It is also worth noting that Jacobi method can converge even if this criteria is not met, but convergence is not guaranteed. Furthermore, convergence rate is linear and slow depending on the $\rho(R_J)$ (smaller is better) for any initial guess $x^{(0)}$. In summary, although being computational cheap and easily parallelizable, Jacobi method is first entry efficient iterative method. This is due to it's slow linear convergence as compare to non-stationnary iterative methods and the strict conditions around coefficient matrix $A$ properties in order to guarantee convergence. Jacobi iterative method is mostly use as preconditionner or smoothing technique in multigrid methods (preconditionners and multigrid methods are discussed later in this chapter).
+
+% \begin{algorithm}
+% \caption{Sequential iterative methods general scheme}
+% \label{alg:iterativeMethodGeneralScheme}
+% \begin{algorithmic} [1]
+% \STATE Given an arbitrary $x^{(0)}$
+% \STATE $k \gets 0$
+% \REPEAT
+%     \STATE $x^{(k+1)} \gets F(x^{(k)})$
+%     \STATE $k \gets k + 1$
+% \UNTIL{convergence criteria is met}
+% \end{algorithmic}
+% \end{algorithm}
+
+
+
+% \begin{algorithm}
+% \caption{Sequential stationnary iterative methods general scheme}
+% \label{alg:iterativeStationnaryMethodGeneralScheme}
+% \begin{algorithmic} [1]
+% \STATE Given an arbitrary $x^{(0)}$
+% \STATE $k \gets 0$
+% \REPEAT
+%     \STATE $x^{(k+1)} \gets Rx^{(k)} + c$
+%     \STATE $k \gets k + 1$
+% \UNTIL{convergence criteria is met}
+% \end{algorithmic}
+% \end{algorithm}
+
+
+% \begin{algorithm}
+% \caption{Sequential Jacobi method}
+% \label{alg:iterativeStationnaryMethodGeneralScheme}
+% \begin{algorithmic} [1]
+% \STATE $N:$ problem size
+% \STATE $A[N][N]$: coefficient matrix
+% \STATE $B[N]$: right hand side vector
+% \STATE $X[N]$: solution vector at current iteration
+% \STATE $XOld[N]$: solution vector at previous iteration
+% \STATE Given an arbitrary $X^{(0)}$
+% \STATE $X \gets X^{(0)}$
+
+% \REPEAT
+%     \FOR{$i = 0$ to $N-1$}
+%         \STATE $XOld[i] \gets X[i]$
+%         \STATE $X[i] \gets 0$
+        
+%         \FOR{$j = 0$ to $i-1$}
+%             \STATE $X[i] \gets X[i] + A[i][j] \times XOld[j] $
+%         \ENDFOR
+        
+%         \FOR{$j = i+1$ to $N-1$}
+%             \STATE $X[i] \gets X[i] + A[i][j] \times XOld[j] $
+%         \ENDFOR
+        
+%     \ENDFOR
+    
+%     \FOR{$i = 0$ to $N-1$}
+%         \STATE $X[i] \gets (B[i] - X[i]) / A[i][j]$
+%     \ENDFOR
+% \UNTIL{\textit{convergence criteria is met}}
+% \end{algorithmic}
+% \end{algorithm}
+
+
+% \hl{transition pour les méthodes non stationnaires}
+
+\subsection{Non-stationary iterative methods}
+
+While stationary methods assume fixed iteration to reach approximate solution $\tilde{x}$ of (\ref{eq:linearequation}) with respect to $\epsilon$, non-stationary method adapt dynamically their search space and direction, based on previous residuals or iterates to reach the same goal. Thus, the most general update rule for non-stationary methods can be expressed as:
+
+\begin{equation}
+     x^{(k+1)}  = F_k(x^{(0)},\dots,x^{(k)})
+    \label{eq:nonStationaryMethodEquation}
+\end{equation}
+
+where $F_k$ is an iteration-dependent operator updated at each iteration. Building on this foundation while pointing out that numerous non-stationary methods fall under one specific sub-class, further discussions in this section are dedicated to Krylov subspace methods.
+
+A Krylov subspace introduced by Alexei Krylov~\cite{krylov_numerical_1931}, is a vector space of $\mathbb{R}^n$ generated by \hl{repeatedly applying a matrix to a vector}. If $A \in \mathbb{R}^{n \times n}$ is an arbitrary square matrix and $v \in \mathbb{R}^{n}$ a non-zero vector, we define the $k$-dimension Krylov subspace as $\mathcal{K}_k(A, v) = \text{span} \{ v, Av, A^2v, \dots, A^{k-1}v \}$. Krylov subspace methods, named upon this latter subspace, always seek the $k$-th approximate solution of (\ref{eq:linearequation}) in the $k$-th Krylov subspace (the \textit{search space}) defined as:
+
+\begin{equation}
+     \mathcal{K}_k(A, r^{(0)}) = \text{span} \{ r^{(0)}, Ar^{(0)}, A^2r^{(0)}, \dots, A^{k-1}r^{(0)} \}
+    \label{eq:nonStationaryMethodEquation}
+\end{equation}
+
+where $x^{(0)}$ is an arbitrary initial guess, and $r^{(0)} = b - Ax^{(0)}$ the initial residual. Along with this first constraint, most classical Krylov methods set a second constraint upon the residual: An orthogonality condition imposed at each new residual:
+
+\begin{equation}
+    r^{(k)} = b - Ax^{(k)} \perp \mathcal{L}_k
+    \label{eq:nonStationaryMethodEquationConstraint}
+\end{equation}
+
+where $\mathcal{L}_k$ is a $k$-dimension subspace (the \textit{test space}) of $\mathbb{R}^{n \times n}$ whether equal (Galerkin method) or distinct (Petrov-Garlekin method) from $\mathcal{K}_k(A, r^{(0)})$.The choice of $\mathcal{L}_k$ induce the minimization of the residual or the error, and serve as one of the key point for discriminating Krylov iterative methods (e.g. $\mathcal{L}_k = \mathcal{K}_k$ for CG and $\mathcal{L}_k = A\mathcal{K}_k$ for GMRES), along with the preconditioning techniques (we discuss preconditioners later in this chapter). The informed reader may have recognized in previous lines, patterns of \textit{oblique} and \textit{orthogonal} projection methods, essential in most iterative methods. Building on previous lines, the approximation problem can be define as:
+
+
+\begin{equation}
+    \text{Find} \quad \tilde{x} \in \mathcal{K}_k(A, r^{(0)}),\quad \text{such that} \quad b - A\tilde{x} \perp \mathcal{L}_k
+    \label{eq:nonStationaryMethodEquationApproximationProblem}
+\end{equation}
+
+
+If we wish to take advantage of known data from initial conditions, then we can seek for $\tilde{x}$ in the affine subspace $x^{(0)} + \mathcal{K}_k(A, r^{(0)})$, thus rewriting (\ref{eq:nonStationaryMethodEquationApproximationProblem}) as:
+
+\begin{equation}
+    \text{Find} \quad \tilde{x} \in x^{(0)} + \mathcal{K}_k(A, r^{(0)}),\quad \text{such that} \quad b - A\tilde{x} \perp \mathcal{L}_k
+    \label{eq:nonStationaryMethodEquationApproximationProblem2}
+\end{equation}
+
+Now, let's define $p_k(A)$ as a $k$-degree matrix polynomial in A which represent the \textit{search direction} at each iteration $k$. Consequently, we derive the general iteration scheme below:
+
+\begin{equation}
+    x^{(k)} = x^{(0)} + r^{(0)}p_k(A)\quad \text{such that}\quad b - Ax^{(k)} \perp \mathcal{L}_k
+    \label{eq:nonStationaryMethodIteration}
+\end{equation}
+
+From a theoretically point of view, in ideal conditions, non-stationary iterative methods are expected to outperform convergence speed of their stationary counterpart due their inherent adaptive scheme, that take into account previous information from past iterations. Additionally, they are expected to converge in at most $n$ iterations (in exact arithmetic) for $n\times n$ systems, because the whole search space is limited to $x^{(0)} + \mathcal{K}_n(A, r^{(0)})$. In practice, rounding errors and large $n$ means we never reach $n$ iterations, stopping when the needed accuracy is reached or using restart mechanism to reduce cost (GMRES). For further discussions, let's consider two classical Krylov iteratives methods: The Conjugate Gradient (CG) and the Generalized Minimal Residual (GMRES).
+
+
+\begin{description}
+
+
+\item[Conjugate Gradient (CG)] Introduced by Hestenes and Stiefel~\cite{hestenes_methods_1952} in 1952, CG iterative method was designed for approximating solution of large sparse SPD systems. In fact for an $n \times n$ system, the $\mathcal{O}(n^3)$ computation complexity of classical direct method (e.g. Cholesky Decomposition) is too costly, not to mention the fill-in cost for sparse matrices. Conjugate Gradient find approximate solution $\tilde{x}$ over successive iterations by minimizing the $k$-th error on the  $k$-th Krylov subspace through the $A$-norm. Doing so implies theoretically that at each iteration $k$, CG the solves the equation:
+
+\begin{equation}
+    x^{(k)} = \min_{x \in x^{(0)} + \mathcal{K}_k(A, r^{(0)})} \| x - x^* \|_A
+    \label{eq:conjuageGradient}
+\end{equation}
+
+Indeed the real solution $x^*$ is not known, so in practice, solving (\ref{eq:conjuageGradient}) is achieved implicitly via the constraints described earlier in this chapter. The test subspace $\mathcal{L}_k$ is chosen to be equal to the search subspace i.e. $\mathcal{L}_k = \mathcal{K}_k(A, r^{(0)})$ and orthogonality condition is convey by ensuring that each search direction $p_k$ is $A$-orthogonal to $\mathcal{L}_k$ i.e. $p_i{(A)}^{T}Ap_j{(A)} = 0$ for $i \neq j$. The error after $k$ iterations satisfies:
+
+\begin{equation}
+    \|x^{(k)} - x^\|_A \leq 2 \|x^{(0)} - x^\|_A \left( \frac{\sqrt{\kappa} - 1}{\sqrt{\kappa} + 1} \right)^k
+    \label{eq:conjuageGradientError}
+\end{equation}
+
+where $\kappa$ is the condition number and $\|v\|_A = \sqrt{v^T A v}$ for any $v in \mathcal{R}^n$. It can also be inferred from (\ref{eq:conjuageGradientError}) that convergence is linear and becomes faster when eigenvalues are clusters (remember $\kappa = \frac{\lambda_{\max}}{\lambda_{\min}}$), furthermore preconditioning improve convergence by reducing $\kappa$. Now, if $A$ is not SPD, CG will not converge, this limit the field of application of CG method. For more general matrix type, another Krylov method like GMRES can be use.
+% discuter un peu plus des gap de la version standard de CG et des solutions qui y sont apportées
+
+\item[Generalized Minimal Residual (GMRES)] Introduced by Youssef Saad in 1986~\cite{saad_gmres_1986}, the Generalized Minimal Residual method is less restrictive than CG. In fact, many real-world problems leads to linear systems of equation where the coefficient matrix is not symmetric. Granted that Conjugate Gradient is only effective when $A$ is symmetric positive definite, GMRES extends the scope of problems solved by iterative methods to non-symmetric and/or non-positive definite systems of equations. GMRES as a Krylov subspace method, fits in the general framework described earlier. The search space is the Krylov subspace while the test space $\mathcal{L}_k$ is defined as $\mathcal{L}_k = A\mathcal{K}_k(A, r^{(0)})$. GMRES methods finds the approximate solution $\tilde{x}$ of the system of equation (\ref{eq:linearequation} by minimizing at each iteration the residual over the Krylov subspace using the Euclidean-norm ($\|.\|_{2})$. This is equivalent to solving the equation:
+
+\begin{equation}
+    x^{(k)} = \min_{x \in x^{(0)} + \mathcal{K}_k(A, r^{(0)})} \| b - Ax \|_2
+    \label{eq:gmres}
+\end{equation}
+
+Solving this equation inherently leads to optimality as GMRES seeks for the approximate solution that yields to the minimal residual over the current Krylov subspace. Furthermore, GMRES builds an orthonormal basis $\{v_1, \dots, v_k\}$ of the Krylov subspace using the Arnoldi process~\cite{arnoldi_principle_1951}. Each new vector $v_{k+1}$ is orthogonalized against all previous $k$ vectors in order to maintain orthogonality. Therefore, GMRES need to store the set of vectors $\{v_1, \dots, v_k\}$ while performing at each iteration an orthogonalization process. The subsequent impact of this scheme is that GMRES memory and computation costs grow linearly per iteration in order to store data and perform orthogonalization. To address the memory growth, practical implementation of GMRES uses a restart variable $m$ that define the number of iterations after which all stored vectors are cleared, expect the last iterate that is use as new initial guess to restart the GMRES process. If $m$ is chosen too small, GMRES may fail to converge. It comes to finding the best trade-off between cost and convergence.
+
+\end{description}
+
+
+% une phrase de transition ici
+
+
+\subsection{Multigrid methods}
+
+Multigrid methods are a class of high efficiency numerical methods that leverage classical earlier iterative methods. Introduced in 1977 by Achi Brandt~\cite{brandt_multi-level_1977} who is one of the pioneer of those methods, multigrid methods was designed as complements to standard iterative methods. In fact, methods such as Jacobi, Gauss-Siedel or SOR previously described in this chapter suffer from a specific convergence issue: They are good at eliminating high-frequency errors, which explain their fast convergence at earlier iterations, but not so good at eliminating low-frequency errors, which in fact drive to slow convergence from certain point to method termination. Building on this fact, Brandt proposed an algorithm that eliminate low-frequency errors on coarser-grids where they appear as high-frequency, and can be reduced more easily. For simplicity, let's consider a hierarchy of two  structured grids (in practice we can have more than two grids) $\Omega_h$ and $\Omega_H$, respectively the \textit{fine grid} and the \textit{coarser grid}, representing two level of discretization of the same domain $\Omega$. Additionally, $r^{(k)}$ and $x^{(k)}$ will be denoted $r$ and $x$, throughout the remainder of this subsection, unless stated otherwise.  Given a classic linear system of equation (\ref{eq:linearequation} to solve, Brandt early description of multigrid method includes four steps, repeated at each iteration.
+
+\begin{description}
+
+\item[Smoothing] This early step corresponds to applying a classic method (Jacobi, SOR,\dots) to the linear system in order to get an approximation $x^{(k)}$ of the real solution $x^{*}$.
+
+\item[Restriction] This second step corresponds to the transfer of the residual form step one, from fine grid to coarser grid. The new residual on the coarser grid is defined as:
+
+\begin{equation}
+    r_{H} = Rr_{h}
+    \label{eq:multigridRestriction}
+\end{equation}
+
+where $r_{h} = b_{h} - A_{h}x_{h}$ and $R \in \mathcal{R}^{n_H \times n_h}$ ($n_H < n_h$ because $\Omega_H$ has fewer unknows than $\Omega_h$) is the \textit{restriction operator} which can be injection, full weighting or Garlekin restriction.
+
+\item[Coarse grid correction] As suggested by the name, this step consists of finding the necessary correction to apply to $\Omega_h$ using the previously transferred residual. Doing this is equivalent to solving on $\Omega_H$, the equation:
+
+\begin{equation}
+    A_{H}e_{H} = r_{H}
+    \label{eq:multigridCorrection}
+\end{equation}
+
+\item[Prolongation] The last step, consist of propagating back the correction on the fine grid $\Omega_h$ by using the formula:
+
+
+\begin{equation}
+    x_{h} \leftarrow x_{h} + Pe_{H}
+    \label{eq:multigridProlongation}
+\end{equation}
+
+where $P \in \mathbb{R}^{n_H \times n_h}$ is the prolongation operator (Linear interpolation, higher order interpolation or Garlekin projection).
+
+
+\end{description}
+
+Once this four steps are completed, a multiple grid \textit{cycle} is considered achieved. It is worth noting that when multiple layers of grid are considered ($n$-grids), the error from the finer grid (first grid) is transmitted to coarsiest ($n$-th grid) grid first via a recursive process, while prolongation step is done inversely. This simple scheme corresponds to what is a called $V$-Cycle multigrid method. Along with this simpliest form, there is the $W$-Cycle where two recursive calls are performed at each level before going back up. The last cyle, the $F$-Cycle, is a mix of $V$-Cycle and $W$-Cycle; it's begin as a $V$-Cycle but conditionally revisit coarse level more often. It's worth noting that the previous example corresponds to what is called GMG (Geometric Multigrid) adapted to structured mesh. For unstructured mesh, Algebraic Multigrid (AMG) are more suited.This galaxy of multigrid methods greatly leverage classical methods by rounding a lot of iterations expected from classical methods to few cycles, accelerating convergence and reducing computation costs from $\mathcal{O}(n^3)$ to $\mathcal{O}(n)$. Just like Jacobi or SOR methods, multigrid methods are higlhy parallelizable and can be used as standalone solvers or preconditionners for Krylov Subspace methods (GMRES, CG,\dots).\hl{ajouter une transition}.
+
+
+\section{Iterative methods acceleration: Preconditioning}
+
+A common say among numerical methods practitioners is: An iterative method is as good as it's preconditionner. This capture the critical role preconditioners play when it comes to iterative methods. In fact, iterative methods are often prone to slow-convergence or inaccurate approximations when the coefficient matrix $A$ is ill-conditioned or has and unfavorable eigenvalues distribution. Ill-conditioned problems exhibit large conditioner number $\kappa(A)=\|A\|\cdot \|A^{-1}\|$ (i.e. $\kappa(A) \gg 1$), resulting in errors over approximate solution, even when the residual norm is small. In the same way, when coefficient matrix eigenvalues are spread out, include some outliers or are really close to zero, iterative methods may struggle converging as more iterations are needed to damp all errors components, worse cases (e.g. near-singular matrix) may lead to divergence or staleness. The purpose of preconditioning is to form a new system of linear equations equivalent to the original system $Ax=b$ (\ref{eq:linearequation}), while being easier to solve. Practically speaking, it all comes to find a non-singular matrix $\mathbf{M}$ (the preconditioner) that approximates the coefficient matrix $A$ so that applying $M$ to the original system leads to a new system (e.g. $M^{-1}Ax=M^{-1}b$) with favorable conditions for iterative methods. If $A$ is well approximated by $M$, then the resulting system exhibits a better condition number (e.g. $\kappa(M^{-1}A) \ll \kappa(A)$) and more clustered eigenvalues (ideally around 1). Consequently, iterative methods can more quickly damp error components per iteration, resulting in less iterations (faster convergence) in order to reach the same desired accuracy as for the original system. Nevertheless, no conclusion on solver wall-clock time can be derive at this step. A good preconditionner must be cheap to build and apply, this way the cost per iteration is minimized or neglected, subsequently a cut in wall-clock time can be expected. At last, it is worth noting that preconditioning does not change the exact solution of $Ax=b$, it only provide a better search directions and minimized iteration count.
+
+According to the manner a preconditioner is applied to the linear system, we typically distinguish three types of preconditioning techniques:
+
+\begin{description}
+
+\item[Left preconditioning] If $M^{-1}$ is applied to the left of $A$ and $b$, this technique is termed left preconditioning. The resulting linear system is illustrated by equation (\ref{eq:leftPreconditioning}), while the preconditioned matrix $M^{-1}A$ is expected to exhibits favorable properties for the solver. Nevertheless, if matrix $A$ is SPD, the left preconditioning break this symmetry, unless $M$ is symmetric. Another aspect worth nothing, as the solver only see the preconditioned system, the true residual of the original system has to be computed if necessary (e.g. for monitoring, as stopping criteria), adding a computational cost.
+
+\begin{equation}
+    M^{-1}Ax = M^{-1}b
+    \label{eq:leftPreconditioning}
+\end{equation}
+
+
+\item[Right preconditioning] Right preconditioning arise when $M^{-1}$ is applied to the right of $A$ only. The resulting linear system illustrated by equation (\ref{eq:rightPreconditioning}) is presented to the solver as $A\hat{x}=b$, where the original vector of unknowns $x=M^{-1}\hat{x}$. This method is simple and the solver compute directly the true residual. Again, right preconditioning break the coefficient matrix symmetry, making it improper for conjugate gradient (CG) solvers that require $A$ being SPD.
+\begin{equation}
+    AM^{-1}\hat{x} = b \text{with} x = M^{-1}\hat{x} 
+    \label{eq:rightPreconditioning}
+\end{equation}
+
+\item[Split (two-sided) preconditioning] If one can factors matrix $M$ so that $M=M_{1}M_{2}$, then it is possible to derive from the original linear system $Ax=b$, the system illustrated by equation (\ref{eq:splitPreconditioning}). This two-sided preconditioning preserves the symmetry and definitivness of matrix $A$, ideal for conjugate gradient methods. One example of matrix $M$ factorization is when $M$ is SPD and admit a square root factorization $M=S^{T}S$.
+
+\begin{equation}
+    M_{2}^{-1}AM_{1}^{-1}\hat{x}=M_{2}^{-1}b \text{with} x = M_{1}^{-1}\hat{x}
+    \label{eq:splitPreconditioning}
+\end{equation}
+
+\end{description}
+
+It's well admitted among practitioners that the three preconditioning methods have equal potential as non-singular $M$ always lead to the same spectrum for $M^{-1}A$, $AM^{-1}$ and $M_{2}^{-1}AM_{1}^{-1}$. The only difference worth nothing is the implementation-specific, therefore, the choice of the preconditioning technique heavily rely on the solver and implementation context (software).
+
+Research has led in literature to various preconditioners depending on specific needs(e.g. Matrix properties) of practitioners. Among basic choices of preconditioner for solvers, we can cite the Diagonal (Jacobi) preconditioner. This preconditioner fall into the simplest and cheaper preconditioners class, exhibiting in ideal conditions small (2 ~ 5) factor reduction of iteration count, leading to modest improvement in convergence. Here, matrix $M$ is chosen to be the diagonal of coefficient matrix $A$ i.e. $M_{ii} = A_{ii}$ and $M_{ij}=0$ when $i \neq j$. The preconditioned system becomes $M^{-1}Ax = M^{-1}b$, effectively ensuring that all diagonal entries of $A$ are equal to $1$. Why one should use this preconditioner ? When the diagonal values of $A$ exhibits uneven scaling or $A$ is diagonally dominant, Jacobi preconditioner application leads same scale among those values, which result in better conditioner number. Nevertheless, as suggested by $M$ structure, the off-diagonal entries are totally neglected, bounding the benefits of such preconditionner.
+
+Another group of widely-used preconditioners are those based on incomplete factorization of coefficient matrix. Incomplete LU (ILU)~\cite{chan_approximate_1997} and incomplete Cholesky (IC)~\cite{gustafsson_class_1978} and their variants are representative of this group. The goal of those preconditioners is to mirror, with a subtle difference, the first step of direct methods (\textit{factorization}) discussed earlier, by transforming $A$ into products of factors, with \textbf{fill-in} if $A$ is sparse. The difference lies in the fill-in step. In fact, complete factorization can lead to dense matrix factors, even if $A$ is sparse. To avoid this unfavorable behavior, and keep some sparsity into factors, a $k$-level of fill-in is defined as the maximum distance (in graph sense) from any previous non-zero entry where fill-in is allowed. For example, ILU(0) and ILU(1) yield to factorization $A=LU$, but the former preconditioner allow fill-in only on entries non-zero previously existed, while the latter fill-in also the entries (zero or non-zero) close by a distance (graph perspective) of $1$ to previous non-zero entries in $A$. The same schema is valid for IC(k) - incomplete Cholesky with level of fill $k$ - applied to positive definite matrix. As a consequence of this dropping entries behavior, some accuracy is inevitably lost for the final approximation of the solution, nevertheless, if tuned appropriately (e.g. increasing $k$ result in more robust preconditioner with some increased cost), the preconditionner yield to dramatically reduced iteration count. Through the years, many issues has been addressed by researchers, like robustness (ILUT~\cite{saad_ilut_1994}) non-stable pivot that could prevent completeness of preconditioner, or the inherently sequential nature of forward and back substitutions limiting parallel behavior. In summary, incomplete LU and Cholesky and their variants are reliable preconditioners that can significantly improve convergence behavior of a linear solver.
+
+Now let's discuss domain decomposition and block preconditioners. We explore those two types of preconditioners together as they are closely related, sharing one under-pining strategy: ``divide-and-conquer''. In fact, domain decomposition and block preconditioners rely on dividing (geometrically or algebraically) the main problem into small sub-problems, which are solved independently and often concurrently, while their inter-dependencies (coupling) are handled in various ways.
+
+\begin{description}
+
+\item[Block preconditioners] Block preconditioners are inspired by component-wise stationnary solvers discussed earlier in this chapter. Hence in algebraic terms, Block Jacobi, Block Gauss-Siedel, Block SOR and their variants are based on specific splitting of the coefficient matrix $A$ into sub-matrices, called blocks, by leveraging the initial matrix block structure. Block Jacobi preconditioner, for example, yield to a splitting of $A \in \mathbb{R}^{n \times n}$ into diagonal sub-matrix and off-diagonal sub-matrices. Equation (\ref{eq:blockjacobidecomposition}) below, illustrate a typical block matrix scheme ($m \ll n$). Following the splitting, Block Jacobi approximate $A$ by only keeping diagonal block-matrices so that $M^{-1} \approx A^{-1}$ with $M = diag(A_{11},A_{22},\cdots,A_{mm})$. This scheme yields to solving $m$ linear equations of the form $A_{ii}x_{i}=b_{i}$  ($1 \leq i \leq m$) independently and often concurrently (parallel solve). 
+
+
+\begin{equation}
+A =
+\begin{bmatrix}
+A_{11} & A_{12} & \cdots & A_{1m} \\
+A_{21} & A_{22} & \cdots & A_{2m} \\
+\vdots & \vdots & \ddots & \vdots \\
+A_{m1} & A_{m2} & \cdots & A_{mm} 
+\end{bmatrix}
+\quad \Rightarrow \quad
+M =
+\begin{bmatrix}
+A_{11} & 0 & \cdots & 0 \\
+0 & 0 & \cdots & 0 \\
+\vdots & \vdots & \ddots & \vdots \\
+0 & 0 & \cdots & A_{mm} 
+\end{bmatrix}
+\label{eq:blockjacobidecomposition}
+\end{equation}
+
+If $A$ is diagonally dominant or exhibits uneven scaling of variables, then Block Jacobi tends to resolve those issues and consequently improve the condition number. Limits of the classical Block Jacobi preconditioner lies in its neglect the off-diagonal blocks, which embed global coupling information. Consequently, if the main system is strongly coupled (remember off-diagonal blocks embed most of coupling information), Block Jacobi may suffer from slow convergence as global error components require more iterations to be dumped. The overall iteration count reduction expected from Block Jacobi stays modest as compare to more advanced preconditioners. One way to improve classical Block Jacobi is to consider, from a spatial point of view, sub-domains overlapping. 
+
+
+% ==============================================================
+% Following, the diagonal blocks are inverted and sub-problems are solved while off-diagonal blocks are neglected. Furthermore, the method is easy to implement and parallelize as local problems can be solved concurrently by different groups of processing units. This participate into building $M_{-1}$ for the subsequent iterative solver. The main issue with the Block Jacobi preconditioner lies in its neglect the off-diagonal blocks, which embed global coupling information. Consequently, if the main system is strongly coupled, Block Jacobi may suffer from slow convergence as global error components require more iterations to be dumped. One way to improve this preconditioner effectiveness is to introduce some overlapping between spatial sub-domains. This way, each sub-domain extends it's interface to neighbors, leading to more robust preconditioner. This latter solution corresponds to the foundational algorithm of Overlapping Schwarz preconditioners (Additive or Multiplicative). It should be noted that Multiplicative Schwarz and Symmetric Block Gauss-Siedel\hl{ici} are similar preconditioners in spirit. Incorporating more data in local solve inevitably yield to increased volume of communication between sub-domains, so the Restrictive Additive Schwartz \hl{ici} was build to increase efficiency by reducing overlapping communication. 
+
+\item[Overlapping Schwartz methods]
+
+- INTRODUCTION AND BACKGROUND
+
+domain decomposition methods split the computational domain into smaller sub-domains
+Schwartz methods implies overlapping subdomains
+Schwartz method was first introduced as an alternating method by Hermann A. Schwarz in 1870 (two overlapping domains solved alternatively using the latest solution at the boundary  )
+The idea was later generalized for an arbitrary number of subdomains
+Primarly used as preconditioners for Krylov methods rather than standalone solvers
+
+Notation: 
++ domain
++ subdomains such as their union is the original domain
++ interface boundary between subdomains whithin their overlap
+
+brief description of the original problem using notation and analysis
+
+
+
+- ADDITIVE AND MULTIPLICATIVE SCHWARTZ METHODS
+
+introduce with notation
+
+Two main variants of Schwartz iterations: multiplicative Schwartz and additive Schwartz
+
+multiplicative schwartz: subproblems solved sequentially 
+additive schwartz: subproblems solved concurrently 
+
+- ROLE OF OVERLAP IN CONVERGENCE
+
+more overlap is better, yield to better conditioning of the problem
+overly large overlapping can be troublesome as the computational cost is increased
+
+- Swartz methods as preconditioners for krylov methods
+
+
+- Theoretical convergence results and scalability
+
+
+
+- Classical schwartz vs optimized schwartz
+
+
+% The original additive Schwarz method was introduced by Dryja and Widlund (1989) ￼, and their work remains a foundational reference for theory. 
+
+% one level
+% Additive Schwarz method
+% Restricted additive Schwarz method
+% two levels
+
+
+\item[Substructuring methods]
+
+
+\end{description}
+
+% Basic introductory example of block preconditioner is the block Jacobi method \hl{ici}, which from domain decomposition point of view, is similar to Additive Schwarz method\hl{ici} (ASM without overlapping). In algebraic terms, block Jacobi method is based on the idea of splitting the coefficient matrix $A$ into sub-matrices called blocks (which corresponds to spatial sub-domains) by leveraging the initial matrix block structure. Following, the diagonal blocks are inverted and sub-problems are solved while off-diagonal blocks are neglected. Furthermore, the method is easy to implement and parallelize as local problems can be solved concurrently by different groups of processing units. This participate into building $M^{-1}$ for the subsequent iterative solver.
+
+% The main issue with the Block Jacobi preconditioner lies in its neglect the off-diagonal blocks, which embed global coupling information. Consequently, if the main system is strongly coupled, Block Jacobi may suffer from slow convergence (even divergence) as global error components require more iterations to be dumped. One way to improve this preconditioner effectiveness is to introduce some overlapping between spatial sub-domains.
+
+
+% This way, each sub-domain extends it's interface to neighbors, leading to more robust preconditioner. This latter solution corresponds to the foundational algorithm of Overlapping Schwarz preconditioners (Additive or Multiplicative). It should be noted that Multiplicative Schwarz and Symmetric Block Gauss-Siedel\hl{ici} are similar preconditioners in spirit. Incorporating more data in local solve inevitably yield to increased volume of communication between sub-domains, so the Restrictive Additive Schwartz \hl{ici} was build to increase efficiency by reducing overlapping communication. Another solution for dealing with global coupling, is enforcing continuity at the interfaces by addressing the interface problem directly with Schur complement\hl{ici} or Finite Element Tearing and Interconneting (FETI)\hl{ici}.
+
+% % ajouter BDD et FETI
+
+% Nevertheless, achieving algorithmic scalability (iterations count bounded as problem size or number of sub-domains grows), require more workload on dumping global error modes. As suggested earlier in this chapter, multigrid methods deal almost effectively with such issues. To mimic their behavior, the idea of introducing a coarse  
+% two-level domain decomposition preconditioners 
+
+% BDD et BDDC , GenEO, Adaptative BDDC
+
+
+
+
+% preconditioners expected appropriate behavior
+% computational and memory cheaper to construct and apply
+% parallelizable - scalable
+% robustness - reliability
+% improve convergence
+% effectivness ( improving problem conditioning)
+% robust to mesh refinement (iteration counter boundness) -  algorithmic scalability
+
+
+
+
+% Widely used preconditioners
+% Diagonal (Jacobi) preconditioners
+% Incomplete factorizations: ILU/IC
+% Algebraic Multigrid (AMG)
+% Sparse Approximate Inverse (SPAI) preconditioners
+% Domain Decomposition and Block preconditioners
+
+% Convergence Theory
+
+% cite papers on:
+% for SPD matrix, then CG
+% for non-symmetric systems
+% interaction with orthogonality and error dynamics
+% non-normal matrices problem
+% reduce iteration count but can increase work per iteration
+% mitigate that quality of the 
+
+
+
+\section{Conclusion}
